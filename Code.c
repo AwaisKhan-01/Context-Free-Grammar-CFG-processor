@@ -304,7 +304,6 @@ void remove_left_recursion(Production** productions, int* prod_count, char** use
     }
 }
 
-// Free all allocated memory
 void free_grammar(Production* productions, int prod_count, char** used_nt, int used_count) {
     for (int i = 0; i < prod_count; i++) {
         free(productions[i].lhs);

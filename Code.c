@@ -11,7 +11,7 @@ typedef struct {
 } Production;
 
 // Helper Functions
-
+//
 // Trim leading and trailing whitespace
 char* trim(char* str) {
     while (isspace((unsigned char)*str)) str++;

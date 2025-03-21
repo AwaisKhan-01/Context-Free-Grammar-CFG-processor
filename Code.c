@@ -304,6 +304,123 @@ void remove_left_recursion(Production** productions, int* prod_count, char** use
     }
 }
 
+// Helper functions for First Set computation
+
+// Get the index of a non-terminal in the used_nt array
+int get_nt_index(char* nt, char** non_terminals, int nt_count) {
+    for (int i = 0; i < nt_count; i++) {
+        if (strcmp(non_terminals[i], nt) == 0) return i;
+    }
+    return -1;
+}
+
+// Check if a symbol is a non-terminal
+int is_nonterminal(char* symbol, char** non_terminals, int nt_count) {
+    return get_nt_index(symbol, non_terminals, nt_count) != -1;
+}
+
+// Check if a symbol is a terminal
+int is_terminal(char* symbol, char** non_terminals, int nt_count) {
+    return strcmp(symbol, "ε") != 0 && !is_nonterminal(symbol, non_terminals, nt_count);
+}
+
+// Add a terminal to a First Set if not already present
+void add_to_set(char*** set, int* size, char* element, int capacity) {
+    for (int i = 0; i < *size; i++) {
+        if (strcmp((*set)[i], element) == 0) return;
+    }
+    if (*size < capacity) {
+        (*set)[*size] = strdup(element);
+        (*size)++;
+    } else {
+        printf("Warning: First Set capacity exceeded for element %s\n", element);
+    }
+}
+
+// Compute nullable non-terminals
+int* compute_nullable(Production* productions, int prod_count, char** non_terminals, int nt_count) {
+    int* nullable = calloc(nt_count, sizeof(int));
+    int changes;
+    do {
+        changes = 0;
+        for (int i = 0; i < prod_count; i++) {
+            Production* p = &productions[i];
+            int A_idx = get_nt_index(p->lhs, non_terminals, nt_count);
+            for (int j = 0; j < p->rhs_count; j++) {
+                char* rhs = p->rhs[j];
+                if (strcmp(rhs, "ε") == 0) {
+                    if (!nullable[A_idx]) {
+                        nullable[A_idx] = 1;
+                        changes = 1;
+                    }
+                } else {
+                    int sym_count;
+                    char** symbols = split_alternative(rhs, &sym_count);
+                    int all_nullable = 1;
+                    for (int k = 0; k < sym_count; k++) {
+                        char* symbol = symbols[k];
+                        if (is_terminal(symbol, non_terminals, nt_count)) {
+                            all_nullable = 0;
+                            break;
+                        } else {
+                            int sym_idx = get_nt_index(symbol, non_terminals, nt_count);
+                            if (!nullable[sym_idx]) {
+                                all_nullable = 0;
+                                break;
+                            }
+                        }
+                    }
+                    if (all_nullable && !nullable[A_idx]) {
+                        nullable[A_idx] = 1;
+                        changes = 1;
+                    }
+                    for (int k = 0; k < sym_count; k++) free(symbols[k]);
+                    free(symbols);
+                }
+            }
+        }
+    } while (changes);
+    return nullable;
+}
+
+// Compute First Sets
+void compute_first_sets(Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, int first_capacity) {
+    int changes;
+    do {
+        changes = 0;
+        for (int i = 0; i < prod_count; i++) {
+            Production* p = &productions[i];
+            int A_idx = get_nt_index(p->lhs, non_terminals, nt_count);
+            for (int j = 0; j < p->rhs_count; j++) {
+                char* rhs = p->rhs[j];
+                if (strcmp(rhs, "ε") == 0) continue;
+                int sym_count;
+                char** symbols = split_alternative(rhs, &sym_count);
+                for (int k = 0; k < sym_count; k++) {
+                    char* symbol = symbols[k];
+                    if (is_terminal(symbol, non_terminals, nt_count)) {
+                        int initial_size = first_sizes[A_idx];
+                        add_to_set(&first_sets[A_idx], &first_sizes[A_idx], symbol, first_capacity);
+                        if (first_sizes[A_idx] > initial_size) changes = 1;
+                        break;
+                    } else {
+                        int sym_idx = get_nt_index(symbol, non_terminals, nt_count);
+                        for (int m = 0; m < first_sizes[sym_idx]; m++) {
+                            int initial_size = first_sizes[A_idx];
+                            add_to_set(&first_sets[A_idx], &first_sizes[A_idx], first_sets[sym_idx][m], first_capacity);
+                            if (first_sizes[A_idx] > initial_size) changes = 1;
+                        }
+                        if (!nullable[sym_idx]) break;
+                    }
+                }
+                for (int k = 0; k < sym_count; k++) free(symbols[k]);
+                free(symbols);
+            }
+        }
+    } while (changes);
+}
+
+// Free grammar memory
 void free_grammar(Production* productions, int prod_count, char** used_nt, int used_count) {
     for (int i = 0; i < prod_count; i++) {
         free(productions[i].lhs);
@@ -332,12 +449,42 @@ int main() {
     printf("\nAfter Left Factoring:\n");
     print_grammar(productions, prod_count);
 
-    // Step 3: Apply left recursion removal on the factored grammar and show result
+    // Step 3: Apply left recursion removal and show result
     remove_left_recursion(&productions, &prod_count, used_nt, &used_count);
     printf("\nAfter Left Recursion Removal:\n");
     print_grammar(productions, prod_count);
 
+    // Step 4: Compute and print First Sets
+    int nt_count = used_count;
+    char** non_terminals = used_nt;
+    int* nullable = compute_nullable(productions, prod_count, non_terminals, nt_count);
+    char*** first_sets = malloc(nt_count * sizeof(char**));
+    int* first_sizes = calloc(nt_count, sizeof(int));
+    int first_capacity = 10; // Fixed capacity; adjust if needed
+    for (int i = 0; i < nt_count; i++) {
+        first_sets[i] = malloc(first_capacity * sizeof(char*));
+    }
+    compute_first_sets(productions, prod_count, non_terminals, nt_count, nullable, first_sets, first_sizes, first_capacity);
+    printf("\nFirst Sets:\n");
+    for (int i = 0; i < nt_count; i++) {
+        printf("First(%s) = { ", non_terminals[i]);
+        for (int j = 0; j < first_sizes[i]; j++) {
+            printf("%s", first_sets[i][j]);
+            if (j < first_sizes[i] - 1) printf(", ");
+        }
+        printf(" }\n");
+    }
+
     // Clean up
+    for (int i = 0; i < nt_count; i++) {
+        for (int j = 0; j < first_sizes[i]; j++) {
+            free(first_sets[i][j]);
+        }
+        free(first_sets[i]);
+    }
+    free(first_sets);
+    free(first_sizes);
+    free(nullable);
     free_grammar(productions, prod_count, used_nt, used_count);
     return 0;
 }

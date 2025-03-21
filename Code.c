@@ -11,7 +11,7 @@ typedef struct {
 } Production;
 
 // Helper Functions
-//
+
 // Trim leading and trailing whitespace
 char* trim(char* str) {
     while (isspace((unsigned char)*str)) str++;
@@ -27,7 +27,7 @@ char** split_string(char* str, const char* delimiter, int* count) {
     char** parts = malloc(10 * sizeof(char*));
     int capacity = 10;
     int i = 0;
-    char* copy = strdup(str); // Work on a copy since strtok modifies the string
+    char* copy = strdup(str);
     char* token = strtok(copy, delimiter);
     while (token != NULL) {
         if (i >= capacity) {
@@ -127,7 +127,7 @@ Production* parse_grammar(const char* filename, int* prod_count, char*** used_nt
     *used_count = 0;
     while (fgets(line, sizeof(line), file)) {
         char* trimmed = trim(line);
-        if (strlen(trimmed) == 0) continue; // Skip empty lines
+        if (strlen(trimmed) == 0) continue;
         char* arrow = strstr(trimmed, "->");
         if (arrow) {
             *arrow = '\0';
@@ -170,7 +170,7 @@ void print_grammar(Production* productions, int prod_count) {
 }
 
 // Perform left factoring
-void factor_productions(Production** productions, int* prod_count, char** used_nt, int* used_count) {
+void left_factoring(Production** productions, int* prod_count, char** used_nt, int* used_count) {
     Queue q = {malloc(100 * sizeof(char*)), 0, 100};
     for (int i = 0; i < *prod_count; i++) {
         enqueue(&q, (*productions)[i].lhs);
@@ -254,6 +254,56 @@ void factor_productions(Production** productions, int* prod_count, char** used_n
     free(q.nt_list);
 }
 
+// Remove left recursion
+void remove_left_recursion(Production** productions, int* prod_count, char** used_nt, int* used_count) {
+    for (int i = 0; i < *prod_count; i++) {
+        Production* p = &(*productions)[i];
+        char* A = p->lhs;
+        char** alpha = malloc(p->rhs_count * sizeof(char*));
+        int alpha_count = 0;
+        char** beta = malloc(p->rhs_count * sizeof(char*));
+        int beta_count = 0;
+        for (int j = 0; j < p->rhs_count; j++) {
+            int sym_count;
+            char** symbols = split_alternative(p->rhs[j], &sym_count);
+            if (sym_count > 0 && strcmp(symbols[0], A) == 0) {
+                alpha[alpha_count++] = join_symbols(symbols, 1, sym_count);
+            } else {
+                beta[beta_count++] = strdup(p->rhs[j]);
+            }
+            for (int k = 0; k < sym_count; k++) free(symbols[k]);
+            free(symbols);
+        }
+        if (alpha_count > 0) {
+            char* A_prime = generate_new_nt(A, used_nt, used_count);
+            char** new_A_rhs = malloc(beta_count * sizeof(char*));
+            for (int j = 0; j < beta_count; j++) {
+                new_A_rhs[j] = malloc(strlen(beta[j]) + strlen(A_prime) + 2);
+                sprintf(new_A_rhs[j], "%s %s", beta[j], A_prime);
+            }
+            char** new_A_prime_rhs = malloc((alpha_count + 1) * sizeof(char*));
+            for (int j = 0; j < alpha_count; j++) {
+                new_A_prime_rhs[j] = malloc(strlen(alpha[j]) + strlen(A_prime) + 2);
+                sprintf(new_A_prime_rhs[j], "%s %s", alpha[j], A_prime);
+            }
+            new_A_prime_rhs[alpha_count] = strdup("ε");
+            for (int j = 0; j < p->rhs_count; j++) free(p->rhs[j]);
+            free(p->rhs);
+            p->rhs = new_A_rhs;
+            p->rhs_count = beta_count;
+            *productions = realloc(*productions, (*prod_count + 1) * sizeof(Production));
+            (*productions)[*prod_count].lhs = strdup(A_prime);
+            (*productions)[*prod_count].rhs = new_A_prime_rhs;
+            (*productions)[*prod_count].rhs_count = alpha_count + 1;
+            (*prod_count)++;
+        }
+        for (int j = 0; j < alpha_count; j++) free(alpha[j]);
+        free(alpha);
+        for (int j = 0; j < beta_count; j++) free(beta[j]);
+        free(beta);
+    }
+}
+
 // Free all allocated memory
 void free_grammar(Production* productions, int prod_count, char** used_nt, int used_count) {
     for (int i = 0; i < prod_count; i++) {
@@ -272,17 +322,23 @@ void free_grammar(Production* productions, int prod_count, char** used_nt, int u
 int main() {
     int prod_count, used_count;
     char** used_nt;
-    Production* productions = parse_grammar("input.txt", &prod_count, &used_nt, &used_count);
 
+    // Step 1: Parse and show original grammar
+    Production* productions = parse_grammar("input.txt", &prod_count, &used_nt, &used_count);
     printf("Original Grammar:\n");
     print_grammar(productions, prod_count);
 
-    factor_productions(&productions, &prod_count, used_nt, &used_count);
-
+    // Step 2: Apply left factoring and show result
+    left_factoring(&productions, &prod_count, used_nt, &used_count);
     printf("\nAfter Left Factoring:\n");
     print_grammar(productions, prod_count);
 
-    free_grammar(productions, prod_count, used_nt, used_count);
+    // Step 3: Apply left recursion removal on the factored grammar and show result
+    remove_left_recursion(&productions, &prod_count, used_nt, &used_count);
+    printf("\nAfter Left Recursion Removal:\n");
+    print_grammar(productions, prod_count);
 
+    // Clean up
+    free_grammar(productions, prod_count, used_nt, used_count);
     return 0;
 }

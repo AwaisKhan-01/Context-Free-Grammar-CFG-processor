@@ -5,9 +5,9 @@
 
 // Structure for a production
 typedef struct {
-    char* lhs;        // Left-hand side non-terminal
-    char** rhs;       // Array of right-hand side alternatives
-    int rhs_count;    // Number of alternatives
+    char* lhs;
+    char** rhs;
+    int rhs_count;
 } Production;
 
 // Helper Functions
@@ -149,15 +149,17 @@ Production* parse_grammar(const char* filename, int* prod_count, char*** used_nt
     return productions;
 }
 
-void print_grammar(Production* productions, int prod_count) {
+void print_grammar(FILE* fp, Production* productions, int prod_count, const char* stage) {
+    fprintf(fp, "%s:\n", stage);
     for (int i = 0; i < prod_count; i++) {
-        printf("%s -> ", productions[i].lhs);
+        fprintf(fp, "%s -> ", productions[i].lhs);
         for (int j = 0; j < productions[i].rhs_count; j++) {
-            printf("%s", productions[i].rhs[j]);
-            if (j < productions[i].rhs_count - 1) printf(" | ");
+            fprintf(fp, "%s", productions[i].rhs[j]);
+            if (j < productions[i].rhs_count - 1) fprintf(fp, " | ");
         }
-        printf("\n");
+        fprintf(fp, "\n");
     }
+    fprintf(fp, "\n");
 }
 
 void left_factoring(Production** productions, int* prod_count, char** used_nt, int* used_count) {
@@ -293,8 +295,6 @@ void remove_left_recursion(Production** productions, int* prod_count, char** use
     }
 }
 
-// Helper functions for First, Follow, and LL(1) Table
-
 int get_nt_index(char* nt, char** non_terminals, int nt_count) {
     for (int i = 0; i < nt_count; i++) {
         if (strcmp(non_terminals[i], nt) == 0) return i;
@@ -367,7 +367,7 @@ int* compute_nullable(Production* productions, int prod_count, char** non_termin
     return nullable;
 }
 
-void compute_first_sets(Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, int first_capacity) {
+void compute_first_sets(FILE* fp, Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, int first_capacity) {
     int changes;
     do {
         changes = 0;
@@ -401,9 +401,20 @@ void compute_first_sets(Production* productions, int prod_count, char** non_term
             }
         }
     } while (changes);
+
+    fprintf(fp, "First Sets:\n");
+    for (int i = 0; i < nt_count; i++) {
+        fprintf(fp, "First(%s) = { ", non_terminals[i]);
+        for (int j = 0; j < first_sizes[i]; j++) {
+            fprintf(fp, "%s", first_sets[i][j]);
+            if (j < first_sizes[i] - 1) fprintf(fp, ", ");
+        }
+        fprintf(fp, " }\n");
+    }
+    fprintf(fp, "\n");
 }
 
-void compute_follow_sets(Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, char*** follow_sets, int* follow_sizes, int follow_capacity) {
+void compute_follow_sets(FILE* fp, Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, char*** follow_sets, int* follow_sizes, int follow_capacity) {
     int start_idx = 0;
     add_to_set(&follow_sets[start_idx], &follow_sizes[start_idx], "$", follow_capacity);
 
@@ -457,9 +468,19 @@ void compute_follow_sets(Production* productions, int prod_count, char** non_ter
             }
         }
     } while (changes);
+
+    fprintf(fp, "Follow Sets:\n");
+    for (int i = 0; i < nt_count; i++) {
+        fprintf(fp, "Follow(%s) = { ", non_terminals[i]);
+        for (int j = 0; j < follow_sizes[i]; j++) {
+            fprintf(fp, "%s", follow_sets[i][j]);
+            if (j < follow_sizes[i] - 1) fprintf(fp, ", ");
+        }
+        fprintf(fp, " }\n");
+    }
+    fprintf(fp, "\n");
 }
 
-// Collect terminals from the grammar
 char** collect_terminals(Production* productions, int prod_count, char** non_terminals, int nt_count, int* term_count) {
     char** terminals = malloc(100 * sizeof(char*));
     int capacity = 100;
@@ -495,7 +516,6 @@ char** collect_terminals(Production* productions, int prod_count, char** non_ter
     return terminals;
 }
 
-// Compute First Set for a string (α)
 void compute_first_alpha(char* alpha, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, char** first_alpha, int* first_alpha_size, int capacity) {
     *first_alpha_size = 0;
     if (strcmp(alpha, "ε") == 0) return;
@@ -518,7 +538,6 @@ void compute_first_alpha(char* alpha, char** non_terminals, int nt_count, int* n
     free(symbols);
 }
 
-// Check if α is nullable
 int is_alpha_nullable(char* alpha, char** non_terminals, int nt_count, int* nullable) {
     if (strcmp(alpha, "ε") == 0) return 1;
     int sym_count;
@@ -541,13 +560,12 @@ int is_alpha_nullable(char* alpha, char** non_terminals, int nt_count, int* null
     return all_nullable;
 }
 
-// Construct LL(1) Parsing Table
 int** construct_ll1_table(Production* productions, int prod_count, char** non_terminals, int nt_count, char** terminals, int term_count, int* nullable, char*** first_sets, int* first_sizes, char*** follow_sets, int* follow_sizes) {
     int** table = malloc(nt_count * sizeof(int*));
     for (int i = 0; i < nt_count; i++) {
         table[i] = malloc(term_count * sizeof(int));
         for (int j = 0; j < term_count; j++) {
-            table[i][j] = -1; // -1 indicates no production
+            table[i][j] = -1;
         }
     }
 
@@ -562,13 +580,13 @@ int** construct_ll1_table(Production* productions, int prod_count, char** non_te
             compute_first_alpha(alpha, non_terminals, nt_count, nullable, first_sets, first_sizes, first_alpha, &first_alpha_size, 10);
 
             for (int k = 0; k < first_alpha_size; k++) {
-                int t_idx = get_nt_index(first_alpha[k], terminals, term_count); // Treat terminals as a lookup
+                int t_idx = get_nt_index(first_alpha[k], terminals, term_count);
                 if (t_idx != -1) {
                     if (table[A_idx][t_idx] != -1) {
                         printf("Conflict at [%s, %s]: Multiple productions (%d and %d)\n", non_terminals[A_idx], terminals[t_idx], table[A_idx][t_idx], i * 100 + j);
                         conflict = 1;
                     } else {
-                        table[A_idx][t_idx] = i * 100 + j; // Encode production index and alternative
+                        table[A_idx][t_idx] = i * 100 + j;
                     }
                 }
             }
@@ -595,28 +613,28 @@ int** construct_ll1_table(Production* productions, int prod_count, char** non_te
     return table;
 }
 
-// Print LL(1) Parsing Table
-void print_ll1_table(int** table, Production* productions, int prod_count, char** non_terminals, int nt_count, char** terminals, int term_count) {
-    printf("\nLL(1) Parsing Table:\n");
-    printf("NT\\T ");
+void print_ll1_table(FILE* fp, int** table, Production* productions, int prod_count, char** non_terminals, int nt_count, char** terminals, int term_count) {
+    fprintf(fp, "LL(1) Parsing Table:\n");
+    fprintf(fp, "NT\\T ");
     for (int j = 0; j < term_count; j++) {
-        printf("%-8s", terminals[j]);
+        fprintf(fp, "%-8s", terminals[j]);
     }
-    printf("\n");
+    fprintf(fp, "\n");
     for (int i = 0; i < nt_count; i++) {
-        printf("%-4s ", non_terminals[i]);
+        fprintf(fp, "%-4s ", non_terminals[i]);
         for (int j = 0; j < term_count; j++) {
             int entry = table[i][j];
             if (entry == -1) {
-                printf("%-8s", "");
+                fprintf(fp, "%-8s", "");
             } else {
                 int prod_idx = entry / 100;
                 int alt_idx = entry % 100;
-                printf("%s->%-4s", productions[prod_idx].lhs, productions[prod_idx].rhs[alt_idx]);
+                fprintf(fp, "%s->%-4s", productions[prod_idx].lhs, productions[prod_idx].rhs[alt_idx]);
             }
         }
-        printf("\n");
+        fprintf(fp, "\n");
     }
+    fprintf(fp, "\n");
 }
 
 void free_grammar(Production* productions, int prod_count, char** used_nt, int used_count) {
@@ -636,22 +654,26 @@ int main() {
     int prod_count, used_count;
     char** used_nt;
 
-    // Step 1: Parse and show original grammar
+    // Open output log file
+    FILE* fp = fopen("output_log.txt", "w");
+    if (!fp) {
+        printf("Error opening output_log.txt\n");
+        exit(1);
+    }
+
+    // Step 1: Parse and log original grammar
     Production* productions = parse_grammar("input.txt", &prod_count, &used_nt, &used_count);
-    printf("Original Grammar:\n");
-    print_grammar(productions, prod_count);
+    print_grammar(fp, productions, prod_count, "Original Grammar");
 
-    // Step 2: Apply left factoring and show result
+    // Step 2: Apply left factoring and log result
     left_factoring(&productions, &prod_count, used_nt, &used_count);
-    printf("\nAfter Left Factoring:\n");
-    print_grammar(productions, prod_count);
+    print_grammar(fp, productions, prod_count, "After Left Factoring");
 
-    // Step 3: Apply left recursion removal and show result
+    // Step 3: Apply left recursion removal and log result
     remove_left_recursion(&productions, &prod_count, used_nt, &used_count);
-    printf("\nAfter Left Recursion Removal:\n");
-    print_grammar(productions, prod_count);
+    print_grammar(fp, productions, prod_count, "After Left Recursion Removal");
 
-    // Step 4: Compute and print First Sets
+    // Step 4: Compute and log First Sets
     int nt_count = used_count;
     char** non_terminals = used_nt;
     int* nullable = compute_nullable(productions, prod_count, non_terminals, nt_count);
@@ -661,40 +683,22 @@ int main() {
     for (int i = 0; i < nt_count; i++) {
         first_sets[i] = malloc(first_capacity * sizeof(char*));
     }
-    compute_first_sets(productions, prod_count, non_terminals, nt_count, nullable, first_sets, first_sizes, first_capacity);
-    printf("\nFirst Sets:\n");
-    for (int i = 0; i < nt_count; i++) {
-        printf("First(%s) = { ", non_terminals[i]);
-        for (int j = 0; j < first_sizes[i]; j++) {
-            printf("%s", first_sets[i][j]);
-            if (j < first_sizes[i] - 1) printf(", ");
-        }
-        printf(" }\n");
-    }
+    compute_first_sets(fp, productions, prod_count, non_terminals, nt_count, nullable, first_sets, first_sizes, first_capacity);
 
-    // Step 5: Compute and print Follow Sets
+    // Step 5: Compute and log Follow Sets
     char*** follow_sets = malloc(nt_count * sizeof(char**));
     int* follow_sizes = calloc(nt_count, sizeof(int));
     int follow_capacity = 10;
     for (int i = 0; i < nt_count; i++) {
         follow_sets[i] = malloc(follow_capacity * sizeof(char*));
     }
-    compute_follow_sets(productions, prod_count, non_terminals, nt_count, nullable, first_sets, first_sizes, follow_sets, follow_sizes, follow_capacity);
-    printf("\nFollow Sets:\n");
-    for (int i = 0; i < nt_count; i++) {
-        printf("Follow(%s) = { ", non_terminals[i]);
-        for (int j = 0; j < follow_sizes[i]; j++) {
-            printf("%s", follow_sets[i][j]);
-            if (j < follow_sizes[i] - 1) printf(", ");
-        }
-        printf(" }\n");
-    }
+    compute_follow_sets(fp, productions, prod_count, non_terminals, nt_count, nullable, first_sets, first_sizes, follow_sets, follow_sizes, follow_capacity);
 
-    // Step 6: Construct and print LL(1) Parsing Table
+    // Step 6: Construct and log LL(1) Parsing Table
     int term_count;
     char** terminals = collect_terminals(productions, prod_count, non_terminals, nt_count, &term_count);
     int** ll1_table = construct_ll1_table(productions, prod_count, non_terminals, nt_count, terminals, term_count, nullable, first_sets, first_sizes, follow_sets, follow_sizes);
-    print_ll1_table(ll1_table, productions, prod_count, non_terminals, nt_count, terminals, term_count);
+    print_ll1_table(fp, ll1_table, productions, prod_count, non_terminals, nt_count, terminals, term_count);
 
     // Clean up
     for (int i = 0; i < nt_count; i++) {
@@ -713,5 +717,8 @@ int main() {
     free(terminals);
     free(ll1_table);
     free_grammar(productions, prod_count, used_nt, used_count);
+
+    fclose(fp);
+    printf("Processing complete. Output written to output_log.txt\n");
     return 0;
 }

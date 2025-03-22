@@ -1,0 +1,39 @@
+Original Grammar:
+E -> E + T | T
+T -> T * F | F
+F -> ( E ) | id
+
+After Left Factoring:
+E -> E + T | T
+T -> T * F | F
+F -> ( E ) | id
+
+After Left Recursion Removal:
+E -> T E'
+T -> F T'
+F -> ( E ) | id
+E' -> + T E' | ε
+T' -> * F T' | ε
+
+First Sets:
+First(E) = { (, id }
+First(T) = { (, id }
+First(F) = { (, id }
+First(E') = { + }
+First(T') = { * }
+
+Follow Sets:
+Follow(E) = { $, ) }
+Follow(T) = { +, $, ) }
+Follow(F) = { *, +, $, ) }
+Follow(E') = { $, ) }
+Follow(T') = { +, $, ) }
+
+LL(1) Parsing Table:
+NT\T (       )       id      +       *       $       
+E    E->T E'        E->T E'                        
+T    T->F T'        T->F T'                        
+F    F->( E )        F->id                          
+E'           E'->ε          E'->+ T E'        E'->ε  
+T'           T'->ε          T'->ε  T'->* F T'T'->ε  
+

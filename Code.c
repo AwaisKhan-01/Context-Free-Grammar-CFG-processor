@@ -304,9 +304,8 @@ void remove_left_recursion(Production** productions, int* prod_count, char** use
     }
 }
 
-// Helper functions for First Set computation
+// Helper functions for First and Follow Set computation
 
-// Get the index of a non-terminal in the used_nt array
 int get_nt_index(char* nt, char** non_terminals, int nt_count) {
     for (int i = 0; i < nt_count; i++) {
         if (strcmp(non_terminals[i], nt) == 0) return i;
@@ -314,17 +313,14 @@ int get_nt_index(char* nt, char** non_terminals, int nt_count) {
     return -1;
 }
 
-// Check if a symbol is a non-terminal
 int is_nonterminal(char* symbol, char** non_terminals, int nt_count) {
     return get_nt_index(symbol, non_terminals, nt_count) != -1;
 }
 
-// Check if a symbol is a terminal
 int is_terminal(char* symbol, char** non_terminals, int nt_count) {
     return strcmp(symbol, "ε") != 0 && !is_nonterminal(symbol, non_terminals, nt_count);
 }
 
-// Add a terminal to a First Set if not already present
 void add_to_set(char*** set, int* size, char* element, int capacity) {
     for (int i = 0; i < *size; i++) {
         if (strcmp((*set)[i], element) == 0) return;
@@ -333,11 +329,10 @@ void add_to_set(char*** set, int* size, char* element, int capacity) {
         (*set)[*size] = strdup(element);
         (*size)++;
     } else {
-        printf("Warning: First Set capacity exceeded for element %s\n", element);
+        printf("Warning: Set capacity exceeded for element %s\n", element);
     }
 }
 
-// Compute nullable non-terminals
 int* compute_nullable(Production* productions, int prod_count, char** non_terminals, int nt_count) {
     int* nullable = calloc(nt_count, sizeof(int));
     int changes;
@@ -383,7 +378,6 @@ int* compute_nullable(Production* productions, int prod_count, char** non_termin
     return nullable;
 }
 
-// Compute First Sets
 void compute_first_sets(Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, int first_capacity) {
     int changes;
     do {
@@ -411,6 +405,66 @@ void compute_first_sets(Production* productions, int prod_count, char** non_term
                             if (first_sizes[A_idx] > initial_size) changes = 1;
                         }
                         if (!nullable[sym_idx]) break;
+                    }
+                }
+                for (int k = 0; k < sym_count; k++) free(symbols[k]);
+                free(symbols);
+            }
+        }
+    } while (changes);
+}
+
+// Compute Follow Sets
+void compute_follow_sets(Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, char*** follow_sets, int* follow_sizes, int follow_capacity) {
+    // Initialize Follow(S) with $
+    int start_idx = 0; // Assume first non-terminal is the start symbol
+    add_to_set(&follow_sets[start_idx], &follow_sizes[start_idx], "$", follow_capacity);
+
+    int changes;
+    do {
+        changes = 0;
+        for (int i = 0; i < prod_count; i++) {
+            Production* p = &productions[i];
+            int B_idx = get_nt_index(p->lhs, non_terminals, nt_count);
+            for (int j = 0; j < p->rhs_count; j++) {
+                char* rhs = p->rhs[j];
+                if (strcmp(rhs, "ε") == 0) continue;
+                int sym_count;
+                char** symbols = split_alternative(rhs, &sym_count);
+                for (int k = 0; k < sym_count; k++) {
+                    if (is_nonterminal(symbols[k], non_terminals, nt_count)) {
+                        int A_idx = get_nt_index(symbols[k], non_terminals, nt_count);
+                        // Look ahead to β (symbols[k+1] onward)
+                        int beta_nullable = 1;
+                        for (int m = k + 1; m < sym_count; m++) {
+                            char* beta_symbol = symbols[m];
+                            if (is_terminal(beta_symbol, non_terminals, nt_count)) {
+                                int initial_size = follow_sizes[A_idx];
+                                add_to_set(&follow_sets[A_idx], &follow_sizes[A_idx], beta_symbol, follow_capacity);
+                                if (follow_sizes[A_idx] > initial_size) changes = 1;
+                                beta_nullable = 0;
+                                break;
+                            } else {
+                                int beta_idx = get_nt_index(beta_symbol, non_terminals, nt_count);
+                                for (int n = 0; n < first_sizes[beta_idx]; n++) {
+                                    int initial_size = follow_sizes[A_idx];
+                                    add_to_set(&follow_sets[A_idx], &follow_sizes[A_idx], first_sets[beta_idx][n], follow_capacity);
+                                    if (follow_sizes[A_idx] > initial_size) changes = 1;
+                                }
+                                if (!nullable[beta_idx]) {
+                                    beta_nullable = 0;
+                                    break;
+                                }
+                            }
+                        }
+                        // If β is nullable or absent, add Follow(B) to Follow(A)
+                        if (beta_nullable) {
+                            for (int n = 0; n < follow_sizes[B_idx]; n++) {
+                                int initial_size = follow_sizes[A_idx];
+                                add_to_set(&follow_sets[A_idx], &follow_sizes[A_idx], follow_sets[B_idx][n], follow_capacity);
+                                if (follow_sizes[A_idx] > initial_size) changes = 1;
+                            }
+                        }
                     }
                 }
                 for (int k = 0; k < sym_count; k++) free(symbols[k]);
@@ -460,7 +514,7 @@ int main() {
     int* nullable = compute_nullable(productions, prod_count, non_terminals, nt_count);
     char*** first_sets = malloc(nt_count * sizeof(char**));
     int* first_sizes = calloc(nt_count, sizeof(int));
-    int first_capacity = 10; // Fixed capacity; adjust if needed
+    int first_capacity = 10;
     for (int i = 0; i < nt_count; i++) {
         first_sets[i] = malloc(first_capacity * sizeof(char*));
     }
@@ -475,15 +529,35 @@ int main() {
         printf(" }\n");
     }
 
+    // Step 5: Compute and print Follow Sets
+    char*** follow_sets = malloc(nt_count * sizeof(char**));
+    int* follow_sizes = calloc(nt_count, sizeof(int));
+    int follow_capacity = 10;
+    for (int i = 0; i < nt_count; i++) {
+        follow_sets[i] = malloc(follow_capacity * sizeof(char*));
+    }
+    compute_follow_sets(productions, prod_count, non_terminals, nt_count, nullable, first_sets, first_sizes, follow_sets, follow_sizes, follow_capacity);
+    printf("\nFollow Sets:\n");
+    for (int i = 0; i < nt_count; i++) {
+        printf("Follow(%s) = { ", non_terminals[i]);
+        for (int j = 0; j < follow_sizes[i]; j++) {
+            printf("%s", follow_sets[i][j]);
+            if (j < follow_sizes[i] - 1) printf(", ");
+        }
+        printf(" }\n");
+    }
+
     // Clean up
     for (int i = 0; i < nt_count; i++) {
-        for (int j = 0; j < first_sizes[i]; j++) {
-            free(first_sets[i][j]);
-        }
+        for (int j = 0; j < first_sizes[i]; j++) free(first_sets[i][j]);
         free(first_sets[i]);
+        for (int j = 0; j < follow_sizes[i]; j++) free(follow_sets[i][j]);
+        free(follow_sets[i]);
     }
     free(first_sets);
     free(first_sizes);
+    free(follow_sets);
+    free(follow_sizes);
     free(nullable);
     free_grammar(productions, prod_count, used_nt, used_count);
     return 0;

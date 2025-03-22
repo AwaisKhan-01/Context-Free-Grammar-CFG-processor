@@ -12,7 +12,6 @@ typedef struct {
 
 // Helper Functions
 
-// Trim leading and trailing whitespace
 char* trim(char* str) {
     while (isspace((unsigned char)*str)) str++;
     if (*str == '\0') return str;
@@ -22,7 +21,6 @@ char* trim(char* str) {
     return str;
 }
 
-// Split a string by a delimiter and trim each part
 char** split_string(char* str, const char* delimiter, int* count) {
     char** parts = malloc(10 * sizeof(char*));
     int capacity = 10;
@@ -42,12 +40,10 @@ char** split_string(char* str, const char* delimiter, int* count) {
     return parts;
 }
 
-// Split an alternative into symbols (by spaces)
 char** split_alternative(char* alt, int* count) {
     return split_string(alt, " ", count);
 }
 
-// Join symbols into a string with spaces
 char* join_symbols(char** symbols, int start, int end) {
     if (start >= end) return strdup("");
     int len = 0;
@@ -61,7 +57,6 @@ char* join_symbols(char** symbols, int start, int end) {
     return result;
 }
 
-// Check if a non-terminal is already used
 int is_used(char** used_nt, int used_count, char* name) {
     for (int i = 0; i < used_count; i++) {
         if (strcmp(used_nt[i], name) == 0) return 1;
@@ -69,7 +64,6 @@ int is_used(char** used_nt, int used_count, char* name) {
     return 0;
 }
 
-// Generate a unique new non-terminal (e.g., A', A'', etc.)
 char* generate_new_nt(char* base, char** used_nt, int* used_count) {
     char* candidate = malloc(strlen(base) + 2);
     sprintf(candidate, "%s'", base);
@@ -86,7 +80,6 @@ char* generate_new_nt(char* base, char** used_nt, int* used_count) {
     return candidate;
 }
 
-// Simple Queue for non-terminals to process
 typedef struct {
     char** nt_list;
     int size;
@@ -111,7 +104,6 @@ char* dequeue(Queue* q) {
     return nt;
 }
 
-// Parse grammar from input.txt
 Production* parse_grammar(const char* filename, int* prod_count, char*** used_nt, int* used_count) {
     FILE* file = fopen(filename, "r");
     if (!file) {
@@ -157,7 +149,6 @@ Production* parse_grammar(const char* filename, int* prod_count, char*** used_nt
     return productions;
 }
 
-// Print the grammar
 void print_grammar(Production* productions, int prod_count) {
     for (int i = 0; i < prod_count; i++) {
         printf("%s -> ", productions[i].lhs);
@@ -169,7 +160,6 @@ void print_grammar(Production* productions, int prod_count) {
     }
 }
 
-// Perform left factoring
 void left_factoring(Production** productions, int* prod_count, char** used_nt, int* used_count) {
     Queue q = {malloc(100 * sizeof(char*)), 0, 100};
     for (int i = 0; i < *prod_count; i++) {
@@ -254,7 +244,6 @@ void left_factoring(Production** productions, int* prod_count, char** used_nt, i
     free(q.nt_list);
 }
 
-// Remove left recursion
 void remove_left_recursion(Production** productions, int* prod_count, char** used_nt, int* used_count) {
     for (int i = 0; i < *prod_count; i++) {
         Production* p = &(*productions)[i];
@@ -304,7 +293,7 @@ void remove_left_recursion(Production** productions, int* prod_count, char** use
     }
 }
 
-// Helper functions for First and Follow Set computation
+// Helper functions for First, Follow, and LL(1) Table
 
 int get_nt_index(char* nt, char** non_terminals, int nt_count) {
     for (int i = 0; i < nt_count; i++) {
@@ -414,10 +403,8 @@ void compute_first_sets(Production* productions, int prod_count, char** non_term
     } while (changes);
 }
 
-// Compute Follow Sets
 void compute_follow_sets(Production* productions, int prod_count, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, char*** follow_sets, int* follow_sizes, int follow_capacity) {
-    // Initialize Follow(S) with $
-    int start_idx = 0; // Assume first non-terminal is the start symbol
+    int start_idx = 0;
     add_to_set(&follow_sets[start_idx], &follow_sizes[start_idx], "$", follow_capacity);
 
     int changes;
@@ -434,7 +421,6 @@ void compute_follow_sets(Production* productions, int prod_count, char** non_ter
                 for (int k = 0; k < sym_count; k++) {
                     if (is_nonterminal(symbols[k], non_terminals, nt_count)) {
                         int A_idx = get_nt_index(symbols[k], non_terminals, nt_count);
-                        // Look ahead to β (symbols[k+1] onward)
                         int beta_nullable = 1;
                         for (int m = k + 1; m < sym_count; m++) {
                             char* beta_symbol = symbols[m];
@@ -457,7 +443,6 @@ void compute_follow_sets(Production* productions, int prod_count, char** non_ter
                                 }
                             }
                         }
-                        // If β is nullable or absent, add Follow(B) to Follow(A)
                         if (beta_nullable) {
                             for (int n = 0; n < follow_sizes[B_idx]; n++) {
                                 int initial_size = follow_sizes[A_idx];
@@ -474,7 +459,166 @@ void compute_follow_sets(Production* productions, int prod_count, char** non_ter
     } while (changes);
 }
 
-// Free grammar memory
+// Collect terminals from the grammar
+char** collect_terminals(Production* productions, int prod_count, char** non_terminals, int nt_count, int* term_count) {
+    char** terminals = malloc(100 * sizeof(char*));
+    int capacity = 100;
+    *term_count = 0;
+    for (int i = 0; i < prod_count; i++) {
+        for (int j = 0; j < productions[i].rhs_count; j++) {
+            int sym_count;
+            char** symbols = split_alternative(productions[i].rhs[j], &sym_count);
+            for (int k = 0; k < sym_count; k++) {
+                char* symbol = symbols[k];
+                if (is_terminal(symbol, non_terminals, nt_count)) {
+                    if (!is_used(terminals, *term_count, symbol)) {
+                        if (*term_count >= capacity) {
+                            capacity *= 2;
+                            terminals = realloc(terminals, capacity * sizeof(char*));
+                        }
+                        terminals[*term_count] = strdup(symbol);
+                        (*term_count)++;
+                    }
+                }
+            }
+            for (int k = 0; k < sym_count; k++) free(symbols[k]);
+            free(symbols);
+        }
+    }
+    if (!is_used(terminals, *term_count, "$")) {
+        if (*term_count >= capacity) {
+            terminals = realloc(terminals, (capacity + 1) * sizeof(char*));
+        }
+        terminals[*term_count] = strdup("$");
+        (*term_count)++;
+    }
+    return terminals;
+}
+
+// Compute First Set for a string (α)
+void compute_first_alpha(char* alpha, char** non_terminals, int nt_count, int* nullable, char*** first_sets, int* first_sizes, char** first_alpha, int* first_alpha_size, int capacity) {
+    *first_alpha_size = 0;
+    if (strcmp(alpha, "ε") == 0) return;
+    int sym_count;
+    char** symbols = split_alternative(alpha, &sym_count);
+    for (int k = 0; k < sym_count; k++) {
+        char* symbol = symbols[k];
+        if (is_terminal(symbol, non_terminals, nt_count)) {
+            add_to_set(&first_alpha, first_alpha_size, symbol, capacity);
+            break;
+        } else {
+            int sym_idx = get_nt_index(symbol, non_terminals, nt_count);
+            for (int m = 0; m < first_sizes[sym_idx]; m++) {
+                add_to_set(&first_alpha, first_alpha_size, first_sets[sym_idx][m], capacity);
+            }
+            if (!nullable[sym_idx]) break;
+        }
+    }
+    for (int k = 0; k < sym_count; k++) free(symbols[k]);
+    free(symbols);
+}
+
+// Check if α is nullable
+int is_alpha_nullable(char* alpha, char** non_terminals, int nt_count, int* nullable) {
+    if (strcmp(alpha, "ε") == 0) return 1;
+    int sym_count;
+    char** symbols = split_alternative(alpha, &sym_count);
+    int all_nullable = 1;
+    for (int k = 0; k < sym_count; k++) {
+        if (is_terminal(symbols[k], non_terminals, nt_count)) {
+            all_nullable = 0;
+            break;
+        } else {
+            int sym_idx = get_nt_index(symbols[k], non_terminals, nt_count);
+            if (!nullable[sym_idx]) {
+                all_nullable = 0;
+                break;
+            }
+        }
+    }
+    for (int k = 0; k < sym_count; k++) free(symbols[k]);
+    free(symbols);
+    return all_nullable;
+}
+
+// Construct LL(1) Parsing Table
+int** construct_ll1_table(Production* productions, int prod_count, char** non_terminals, int nt_count, char** terminals, int term_count, int* nullable, char*** first_sets, int* first_sizes, char*** follow_sets, int* follow_sizes) {
+    int** table = malloc(nt_count * sizeof(int*));
+    for (int i = 0; i < nt_count; i++) {
+        table[i] = malloc(term_count * sizeof(int));
+        for (int j = 0; j < term_count; j++) {
+            table[i][j] = -1; // -1 indicates no production
+        }
+    }
+
+    int conflict = 0;
+    for (int i = 0; i < prod_count; i++) {
+        Production* p = &productions[i];
+        int A_idx = get_nt_index(p->lhs, non_terminals, nt_count);
+        for (int j = 0; j < p->rhs_count; j++) {
+            char* alpha = p->rhs[j];
+            char* first_alpha[10];
+            int first_alpha_size = 0;
+            compute_first_alpha(alpha, non_terminals, nt_count, nullable, first_sets, first_sizes, first_alpha, &first_alpha_size, 10);
+
+            for (int k = 0; k < first_alpha_size; k++) {
+                int t_idx = get_nt_index(first_alpha[k], terminals, term_count); // Treat terminals as a lookup
+                if (t_idx != -1) {
+                    if (table[A_idx][t_idx] != -1) {
+                        printf("Conflict at [%s, %s]: Multiple productions (%d and %d)\n", non_terminals[A_idx], terminals[t_idx], table[A_idx][t_idx], i * 100 + j);
+                        conflict = 1;
+                    } else {
+                        table[A_idx][t_idx] = i * 100 + j; // Encode production index and alternative
+                    }
+                }
+            }
+            for (int k = 0; k < first_alpha_size; k++) free(first_alpha[k]);
+
+            if (is_alpha_nullable(alpha, non_terminals, nt_count, nullable)) {
+                for (int k = 0; k < follow_sizes[A_idx]; k++) {
+                    int t_idx = get_nt_index(follow_sets[A_idx][k], terminals, term_count);
+                    if (t_idx != -1) {
+                        if (table[A_idx][t_idx] != -1) {
+                            printf("Conflict at [%s, %s]: Multiple productions (%d and %d)\n", non_terminals[A_idx], terminals[t_idx], table[A_idx][t_idx], i * 100 + j);
+                            conflict = 1;
+                        } else {
+                            table[A_idx][t_idx] = i * 100 + j;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (conflict) {
+        printf("Warning: Grammar is not LL(1) due to conflicts.\n");
+    }
+    return table;
+}
+
+// Print LL(1) Parsing Table
+void print_ll1_table(int** table, Production* productions, int prod_count, char** non_terminals, int nt_count, char** terminals, int term_count) {
+    printf("\nLL(1) Parsing Table:\n");
+    printf("NT\\T ");
+    for (int j = 0; j < term_count; j++) {
+        printf("%-8s", terminals[j]);
+    }
+    printf("\n");
+    for (int i = 0; i < nt_count; i++) {
+        printf("%-4s ", non_terminals[i]);
+        for (int j = 0; j < term_count; j++) {
+            int entry = table[i][j];
+            if (entry == -1) {
+                printf("%-8s", "");
+            } else {
+                int prod_idx = entry / 100;
+                int alt_idx = entry % 100;
+                printf("%s->%-4s", productions[prod_idx].lhs, productions[prod_idx].rhs[alt_idx]);
+            }
+        }
+        printf("\n");
+    }
+}
+
 void free_grammar(Production* productions, int prod_count, char** used_nt, int used_count) {
     for (int i = 0; i < prod_count; i++) {
         free(productions[i].lhs);
@@ -488,7 +632,6 @@ void free_grammar(Production* productions, int prod_count, char** used_nt, int u
     free(used_nt);
 }
 
-// Main function
 int main() {
     int prod_count, used_count;
     char** used_nt;
@@ -547,18 +690,28 @@ int main() {
         printf(" }\n");
     }
 
+    // Step 6: Construct and print LL(1) Parsing Table
+    int term_count;
+    char** terminals = collect_terminals(productions, prod_count, non_terminals, nt_count, &term_count);
+    int** ll1_table = construct_ll1_table(productions, prod_count, non_terminals, nt_count, terminals, term_count, nullable, first_sets, first_sizes, follow_sets, follow_sizes);
+    print_ll1_table(ll1_table, productions, prod_count, non_terminals, nt_count, terminals, term_count);
+
     // Clean up
     for (int i = 0; i < nt_count; i++) {
         for (int j = 0; j < first_sizes[i]; j++) free(first_sets[i][j]);
         free(first_sets[i]);
         for (int j = 0; j < follow_sizes[i]; j++) free(follow_sets[i][j]);
         free(follow_sets[i]);
+        free(ll1_table[i]);
     }
     free(first_sets);
     free(first_sizes);
     free(follow_sets);
     free(follow_sizes);
     free(nullable);
+    for (int i = 0; i < term_count; i++) free(terminals[i]);
+    free(terminals);
+    free(ll1_table);
     free_grammar(productions, prod_count, used_nt, used_count);
     return 0;
 }

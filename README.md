@@ -129,8 +129,8 @@ FOLLOW(F) = { '*', '+', '$' }
 
 ---
 ## Authors
-- **[Your Name]** (Roll Number 1)
-- **[Your Partner’s Name]** (Roll Number 2)
+- **Awais Khan** (22i-0997)
+- **Shayan Memon** (22i-0773)
 
 ---
 ## License
